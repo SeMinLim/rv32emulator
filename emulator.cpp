@@ -314,9 +314,9 @@ typedef struct {
 
 uint32_t assemble(instr* inst) {
     instr_type op = inst->op;
-
-    uint32_t assembled, imm = 0;
-    uint8_t rs1, rs2, rd, funct3, funct7, opcode = 0;
+	
+	uint32_t assembled = 0, imm = 0;
+	uint8_t rs1 = 0, rs2 = 0, rd = 0, funct3 = 0, funct7 = 0, opcode = 0;
 
     switch (op) {
         case UNIMPL: case HCF: assembled = 0xcafebabe; break;
