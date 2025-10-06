@@ -1009,17 +1009,17 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 			break;
 			*/
 
-			case BEQ: if ( rf[i.a1.reg] == rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BGE: if ( *(int32_t*)&rf[i.a1.reg] >= *(int32_t*)&rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BGEU: if ( rf[i.a1.reg] >= rf[i.a2.reg] ) pc_next = i.a3.imm; 
+			case BEQ: if ( rf[i.a1.reg] == rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BGE: if ( *(int32_t*)&rf[i.a1.reg] >= *(int32_t*)&rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BGEU: if ( rf[i.a1.reg] >= rf[i.a2.reg] ) pc_next = pc + i.a3.imm; 
 				break;
-			case BLT: if ( *(int32_t*)&rf[i.a1.reg] < *(int32_t*)&rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BLTU: if ( rf[i.a1.reg] < rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BNE: if ( rf[i.a1.reg] != rf[i.a2.reg] ) pc_next = i.a3.imm; break;
+			case BLT: if ( *(int32_t*)&rf[i.a1.reg] < *(int32_t*)&rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BLTU: if ( rf[i.a1.reg] < rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BNE: if ( rf[i.a1.reg] != rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
 
 			case JAL:
 				rf[i.a1.reg] = pc + 4;
-				pc_next = i.a2.imm;
+				pc_next = pc + i.a2.imm;
 				//printf( "jal %d %x\n", pc+4, pc_next );
 				break;
 			case JALR:
@@ -1093,8 +1093,10 @@ void normalize_labels(instr* imem, label_loc* labels, int label_count, source* s
 				}
 				case JAL:
 				int pc = (i*4);
-				int target = ii->a3.imm;
-				int diff = pc - target;
+				int target = ii->a2.imm;
+				int diff = target - pc;
+				ii->a2.imm = diff;
+
 				if ( diff < 0 ) diff = -diff;
 
 				if ( diff >= (1<<21) ) {
@@ -1120,7 +1122,9 @@ void normalize_labels(instr* imem, label_loc* labels, int label_count, source* s
 				case BEQ: case BGE: case BGEU: case BLT: case BLTU: case BNE: {
 					int pc = (i*4);
 					int target = ii->a3.imm;
-					int diff = pc - target;
+					int diff = target - pc;
+					ii->a3.imm = diff;
+					
 					if ( diff < 0 ) diff = -diff;
 
 					if ( diff >= (1<<13) ) {
