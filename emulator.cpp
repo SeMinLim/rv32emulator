@@ -312,6 +312,149 @@ typedef struct {
 	bool breakpoint = false;
 } instr;
 
+uint32_t assemble(instr* inst) {
+    instr_type op = inst->op;
+	
+	uint32_t assembled = 0, imm = 0;
+	uint8_t rs1 = 0, rs2 = 0, rd = 0, funct3 = 0, funct7 = 0, opcode = 0;
+
+    switch (op) {
+        case UNIMPL: case HCF: assembled = 0xcafebabe; break;
+        case ADD: funct3 = 0x0; funct7 = 0x00; goto rtype; // forgive me
+        case SUB: funct3 = 0x0; funct7 = 0x20; goto rtype;
+        case XOR: funct3 = 0x4; funct7 = 0x00; goto rtype;
+        case OR: funct3 = 0x6; funct7 = 0x00; goto rtype;
+        case AND: funct3 = 0x7; funct7 = 0x00; goto rtype;
+        case SLL: funct3 = 0x1; funct7 = 0x00; goto rtype;
+        case SRL: funct3 = 0x5; funct7 = 0x00; goto rtype;
+        case SRA: funct3 = 0x5; funct7 = 0x20; goto rtype;
+        case SLT: funct3 = 0x2; funct7 = 0x00; goto rtype;
+        case SLTU: funct3 = 0x3; funct7 = 0x00;
+
+        rtype:
+            opcode = 0x33;
+
+            rd = inst->a1.reg;
+            rs1 = inst->a2.reg;
+            rs2 = inst->a3.reg;
+
+            assembled = opcode | (rd << 7) | (funct3 << 12) | (rs1 << 15) | (rs2 << 20) | (funct7 << 25);
+        break;
+
+        case ADDI: funct3 = 0x0; goto itype;
+        case XORI: funct3 = 0x4; goto itype;
+        case ORI: funct3 = 0x6; goto itype;
+        case ANDI: funct3 = 0x7; goto itype;
+        case SLLI:
+            funct3 = 0x1;
+            imm = inst->a3.imm & ((1 << 5) - 1);
+            goto itype_after_imm;
+        case SRLI:
+            funct3 = 0x5;
+            imm = inst->a3.imm & ((1 << 5) - 1);
+            goto itype_after_imm;
+        case SRAI:
+            funct3 = 0x5;
+            imm = inst->a3.imm & ((1 << 5) - 1);
+            imm |= 0x20 << 5;
+            goto itype_after_imm;
+        case SLTI: funct3 = 0x2; goto itype;
+        case SLTIU: funct3 = 0x3;
+
+        itype:
+            imm = inst->a3.imm & ((1 << 12) - 1);
+        itype_after_imm:
+            opcode = 0x13;
+
+            rd = inst->a1.reg;
+            rs1 = inst->a2.reg;
+
+            assembled = opcode | (rd << 7) | (funct3 << 12) | (rs1 << 15) | (imm << 20);
+            break;
+        // load (also i types)
+        case LB: funct3 = 0x0; goto itype_load;
+        case LH: funct3 = 0x1; goto itype_load;
+        case LW: funct3 = 0x2; goto itype_load;
+        case LBU: funct3 = 0x4; goto itype_load;
+        case LHU: funct3 = 0x5;
+
+        itype_load:
+            opcode = 0x03;
+
+            rd = inst->a1.reg;
+            rs1 = inst->a2.reg;
+            imm = inst->a3.imm & ((1 << 12) - 1);
+
+            assembled = opcode | (rd << 7) | (funct3 << 12) | (rs1 << 15) | (imm << 20);
+        break;
+
+        case JALR:
+            opcode = 0x67;
+            funct3 = 0x0;
+
+            rd = inst->a1.reg;
+            rs1 = inst->a2.reg;
+            imm = inst->a3.imm & ((1 << 12) - 1);
+
+            assembled = opcode | (rd << 7) | (funct3 << 12) | (rs1 << 15) | (imm << 20);
+        break;
+
+        case SB: funct3 = 0x0; goto stype;
+        case SH: funct3 = 0x1; goto stype;
+        case SW: funct3 = 0x2;
+
+        stype:
+            opcode = 0x23;
+
+            rs1 = inst->a2.reg;
+            rs2 = inst->a1.reg;
+            imm = inst->a3.imm & ((1 << 12) - 1);
+
+            assembled = opcode | ((imm & ((1 << 5) - 1)) << 7) | (funct3 << 12) | (rs1 << 15) | (rs2 << 20) | ((imm >> 5) << 25);
+        break;
+
+        case BEQ: funct3 = 0x0; goto btype;
+        case BNE: funct3 = 0x1; goto btype;
+        case BLT: funct3 = 0x4; goto btype;
+        case BGE: funct3 = 0x5; goto btype;
+        case BLTU: funct3 = 0x6; goto btype;
+        case BGEU: funct3 = 0x7;
+
+        btype:
+            opcode = 0x63;
+
+            rs1 = inst->a1.reg;
+            rs2 = inst->a2.reg;
+            imm = inst->a3.imm & ((1 << 13) - 1);
+
+            assembled = opcode | (((imm >> 11) & 1) << 7) | (((imm >> 1) & ((1 << 4) - 1)) << 8) | (funct3 << 12) | (rs1 << 15) | (rs2 << 20) | (((imm >> 5) & ((1 << 6) - 1)) << 25) | (((imm >> 12) & 1) << 31);
+        break;
+        // J
+        case JAL:
+            opcode = 0x6F;
+
+            rd = inst->a1.reg;
+            imm = inst->a2.imm & ((1 << 21) - 1);
+
+            assembled = opcode | (rd << 7) | (((imm >> 12) & ((1 << 8) - 1)) << 12) | (((imm >> 11) & 1) << 20) | (((imm >> 1) & ((1 << 10) - 1)) << 21) | (((imm >> 20) & 1) << 31);
+        break;
+        // U
+        case LUI:
+            opcode = 0x37;
+            goto utype;
+        case AUIPC:
+            opcode = 0x17;
+
+        utype:
+            rd = inst->a1.reg;
+            imm = inst->a2.imm & ((1 << 20) - 1);
+
+            assembled = opcode | (rd << 7) | (imm << 12);
+        break;
+    }
+    return assembled;
+}
+
 void append_source(const char* op, const char* a1, const char* a2, const char* a3, source* src, instr* i) {
 	char tbuf[128]; // not safe... static size... but should be okay since label length enforced
 	if ( op && a1 && !a2 && !a3 ) {
@@ -731,7 +874,7 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 			if ( stepcnt == 0 || i.breakpoint ) {
 				stepping = true;
 				printf( "\n" );
-				if ( i.psrc ) printf( "Next: %s\n", i.psrc );
+				if ( i.psrc ) printf( "Next: %s / 0x%08x\n", i.psrc, assemble(&i) );
 				while (true) {
 					printf( "[inst: %6d pc: %6d, src line %4d]\n", inst_cnt, pc, i.orig_line );
 
@@ -815,7 +958,7 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 						for ( int i = 0; i < DATA_OFFSET/4; i++ ) {
 							instr* ii = &imem[i];
 							if ( ii->orig_line >= 0 && ii->psrc ) {
-								printf( "%9d: %s\n", ii->orig_line, ii->psrc );
+								printf( "%9d: %s / 0x%08x\n", ii->orig_line, ii->psrc, assemble(ii) );
 							}
 						}
 					}
@@ -866,17 +1009,17 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 			break;
 			*/
 
-			case BEQ: if ( rf[i.a1.reg] == rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BGE: if ( *(int32_t*)&rf[i.a1.reg] >= *(int32_t*)&rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BGEU: if ( rf[i.a1.reg] >= rf[i.a2.reg] ) pc_next = i.a3.imm; 
+			case BEQ: if ( rf[i.a1.reg] == rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BGE: if ( *(int32_t*)&rf[i.a1.reg] >= *(int32_t*)&rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BGEU: if ( rf[i.a1.reg] >= rf[i.a2.reg] ) pc_next = pc + i.a3.imm; 
 				break;
-			case BLT: if ( *(int32_t*)&rf[i.a1.reg] < *(int32_t*)&rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BLTU: if ( rf[i.a1.reg] < rf[i.a2.reg] ) pc_next = i.a3.imm; break;
-			case BNE: if ( rf[i.a1.reg] != rf[i.a2.reg] ) pc_next = i.a3.imm; break;
+			case BLT: if ( *(int32_t*)&rf[i.a1.reg] < *(int32_t*)&rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BLTU: if ( rf[i.a1.reg] < rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
+			case BNE: if ( rf[i.a1.reg] != rf[i.a2.reg] ) pc_next = pc + i.a3.imm; break;
 
 			case JAL:
 				rf[i.a1.reg] = pc + 4;
-				pc_next = i.a2.imm;
+				pc_next = pc + i.a2.imm;
 				//printf( "jal %d %x\n", pc+4, pc_next );
 				break;
 			case JALR:
@@ -950,8 +1093,10 @@ void normalize_labels(instr* imem, label_loc* labels, int label_count, source* s
 				}
 				case JAL:
 				int pc = (i*4);
-				int target = ii->a3.imm;
-				int diff = pc - target;
+				int target = ii->a2.imm;
+				int diff = target - pc;
+				ii->a2.imm = diff;
+
 				if ( diff < 0 ) diff = -diff;
 
 				if ( diff >= (1<<21) ) {
@@ -977,7 +1122,9 @@ void normalize_labels(instr* imem, label_loc* labels, int label_count, source* s
 				case BEQ: case BGE: case BGEU: case BLT: case BLTU: case BNE: {
 					int pc = (i*4);
 					int target = ii->a3.imm;
-					int diff = pc - target;
+					int diff = target - pc;
+					ii->a3.imm = diff;
+					
 					if ( diff < 0 ) diff = -diff;
 
 					if ( diff >= (1<<13) ) {
