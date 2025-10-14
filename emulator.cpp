@@ -53,6 +53,8 @@ typedef enum {
 	ADDI,
 	MUL,
 	MULI,
+	MAM,
+	MAMB,
 	AND,
 	ANDI,
 	AUIPC,
@@ -95,6 +97,8 @@ instr_type parse_instr(char* tok) {
 	// 2r->1r
 	if ( streq(tok, "add") ) return ADD;
 	if ( streq(tok, "mul") ) return MUL;
+	if ( streq(tok, "mam") ) return MAM;
+	if ( streq(tok, "mamb") ) return MAMB;
 	if ( streq(tok, "sub") ) return SUB;
 	if ( streq(tok, "slt") ) return SLT;
 	if ( streq(tok, "sltu") ) return SLTU;
@@ -311,6 +315,7 @@ typedef struct {
 	operand a1;
 	operand a2;
 	operand a3;
+	int a4_reg = -1;  // Fourth register for MAM/MAMB instructions
 	char* psrc = NULL;
 	int orig_line=-1;
 	bool breakpoint = false;
@@ -527,6 +532,7 @@ int parse_pseudoinstructions(int line, char* ftok, instr* imem, int ioff, label_
 		append_source("addi",o1, o2, NULL, src, i);
 		return 1;
 	}
+
 	if ( streq(ftok, "bnez" )) {
 		if ( !o1 || !o2 || o3 ) print_syntax_error(line, "Invalid format");
 		instr* i = &imem[ioff];
@@ -619,6 +625,13 @@ int parse_instr(int line, char* ftok, instr* imem, int memoff, label_loc* labels
 				i->a1.reg = parse_reg(o1, line);
 				i->a2.reg = parse_reg(o2, line);
 				i->a3.reg = parse_reg(o3, line);
+				return 1;
+			case MAM: case MAMB:
+				if ( !o1 || !o2 || !o3 || !o4 ) print_syntax_error( line, "Invalid format" );
+				i->a1.reg = parse_reg(o1, line);  // rd
+				i->a2.reg = parse_reg(o2, line);  // rs1
+				i->a3.reg = parse_reg(o3, line);  // rs2
+				i->a4_reg = parse_reg(o4, line);  // rs3
 				return 1;
 			case LB: case LBU: case LH: case LHU: case LW: case SB: case SH: case SW:
 				if ( !o1 || !o2 || o3 || o4 ) print_syntax_error( line, "Invalid format" );
@@ -836,9 +849,29 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 		switch (i.op) {
 			case ADD: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;
 			case MUL: rf[i.a1.reg] = rf[i.a2.reg] * rf[i.a3.reg]; break;
+			case MAM: {
+				// MAM rd, rs1, rs2, rs3: rd += rs1[rs3] * rs2[rs3] (word arrays)
+				uint32_t index = rf[i.a4_reg];
+				uint32_t addr1 = rf[i.a2.reg] + (index << 2);  // rs1 + (rs3 * 4)
+				uint32_t addr2 = rf[i.a3.reg] + (index << 2);  // rs2 + (rs3 * 4)
+				uint32_t val1 = mem_read(mem, addr1, LW);
+				uint32_t val2 = mem_read(mem, addr2, LW);
+				rf[i.a1.reg] = rf[i.a1.reg] + (val1 * val2);
+				break;
+			}
+			case MAMB: {
+				// MAMB rd, rs1, rs2, rs3: rd += rs1[rs3] * rs2[rs3] (byte arrays)
+				uint32_t index = rf[i.a4_reg];
+				uint32_t addr1 = rf[i.a2.reg] + index;  // rs1 + rs3
+				uint32_t addr2 = rf[i.a3.reg] + index;  // rs2 + rs3
+				uint32_t val1 = mem_read(mem, addr1, LB);
+				uint32_t val2 = mem_read(mem, addr2, LB);
+				rf[i.a1.reg] = rf[i.a1.reg] + (val1 * val2);
+				break;
+			}
 			case SUB: rf[i.a1.reg] = rf[i.a2.reg] - rf[i.a3.reg]; break;
 			case SLT: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) < (*(int32_t*)&rf[i.a3.reg]) ? 1 : 0; break;
-			case SLTU: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;
+			case SLTU: rf[i.a1.reg] = rf[i.a2.reg] < rf[i.a3.reg] ? 1 : 0; break;
 			case AND: rf[i.a1.reg] = rf[i.a2.reg] & rf[i.a3.reg]; break;
 			case OR: rf[i.a1.reg] = rf[i.a2.reg] | rf[i.a3.reg]; break;
 			case XOR: rf[i.a1.reg] = rf[i.a2.reg] ^ rf[i.a3.reg]; break;
@@ -1042,6 +1075,7 @@ main(int argc, char** argv) {
 		imem[i].a1.type = OPTYPE_NONE;
 		imem[i].a2.type = OPTYPE_NONE;
 		imem[i].a3.type = OPTYPE_NONE;
+		imem[i].a4_reg = -1;
 	}
 
 	parse(fin, mem, imem, memoff, labels, label_count, &src);
