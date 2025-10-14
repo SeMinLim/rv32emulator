@@ -1,5 +1,5 @@
 *.c
 obj
 .*.sw?
-./example_questions
+/example_questions
 .vscode

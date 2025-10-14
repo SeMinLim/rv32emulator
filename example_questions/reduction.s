@@ -1,3 +1,6 @@
+#20223100 simjoon
+#I used rv32emulator
+
 .text 
 start:
 	# Load parameters and call solve
@@ -6,10 +9,7 @@ start:
 	lw a0 0(t0)
 	la a1 inputs
 	la a2 masks
-
 	jal solve
-
-
 	# Compare answer
 	la t0 answer
 	lw t0 0(t0)
@@ -39,10 +39,40 @@ submit:
 ####### Modify this part! #############>>
 
 solve:
-	li t0 0xdeadbeef
-	sw t0 0(sp)
-	#addi a0 zero 1
-	#jal submit
+	# Problem anwser source code in C
+	# int i=0;
+	# int sum = 0;
+	# for( i = 0;i<a0{16};i++){
+	#	if(masks[i]==0){
+	# 		sum += inputs[i]
+	#	}
+	# }
+	# return sum;
+	######
+	addi sp sp -4
+	sw ra 0(sp)
+	li t5 0
+	li t0 0
+loop_start:
+	bge t0 a0 loop_end
+
+	add t1 a2 t0
+	lb t2 0(t1)
+	beq t2 x0 skip_addition
+
+	add t3 a1 t0
+	lb t4 0(t3)
+	add t5 t5 t4
+
+skip_addition:
+	addi t0 t0 1
+	j loop_start
+
+loop_end:
+	mv a0 t5
+	jal submit
+	lw ra 0(sp)
+	addi sp sp 4
 	ret
 
 ### Do not modify beyond this point! ##<<
