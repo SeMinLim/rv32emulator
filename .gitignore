@@ -1,0 +1,5 @@
+*.c
+obj
+.*.sw?
+/example_questions
+.vscode
