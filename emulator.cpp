@@ -819,6 +819,16 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 							}
 						}
 					}
+					if ( keybuf[0] == 'k' ) {
+						printf( "Cache Statistics:\n" );
+						printf( "  Read requests:  %d\n", mem_read_reqs );
+						printf( "  Read hits:      %d (%.1f%%)\n", cache_read_hits, 
+								mem_read_reqs > 0 ? 100.0*cache_read_hits/mem_read_reqs : 0.0 );
+						printf( "  Write requests: %d\n", mem_write_reqs );
+						printf( "  Write hits:     %d (%.1f%%)\n", cache_write_hits,
+								mem_write_reqs > 0 ? 100.0*cache_write_hits/mem_write_reqs : 0.0 );
+						printf( "  Flush words:    %d\n", mem_flush_words );
+					}
 				}
 			}
 		}
@@ -828,7 +838,7 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 			case ADD: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;
 			case SUB: rf[i.a1.reg] = rf[i.a2.reg] - rf[i.a3.reg]; break;
 			case SLT: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) < (*(int32_t*)&rf[i.a3.reg]) ? 1 : 0; break;
-			case SLTU: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;
+			case SLTU: rf[i.a1.reg] = rf[i.a2.reg] < rf[i.a3.reg] ? 1 : 0; break;
 			case AND: rf[i.a1.reg] = rf[i.a2.reg] & rf[i.a3.reg]; break;
 			case OR: rf[i.a1.reg] = rf[i.a2.reg] | rf[i.a3.reg]; break;
 			case XOR: rf[i.a1.reg] = rf[i.a2.reg] ^ rf[i.a3.reg]; break;
