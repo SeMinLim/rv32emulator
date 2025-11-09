@@ -23,6 +23,6 @@ int cache_peek(uint32_t addr, int bytes);
 void cache_write(uint32_t addr, uint32_t data, int bytes);
 uint32_t cache_read(uint32_t addr, int bytes) ;
 void cache_update(uint32_t addr, uint32_t data);
-void cache_flush(uint32_t addr, uint8_t* mem);
+int cache_flush(uint32_t addr, uint8_t* mem);
 
 #endif
