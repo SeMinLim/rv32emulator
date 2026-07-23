@@ -1,0 +1,142 @@
+name: Apply RV32I execution fixes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-rv32i-execution-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-main:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply execution fixes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("emulator.cpp")
+          source = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "\t\t\tcase SLTU: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;",
+                  "\t\t\tcase SLTU: rf[i.a1.reg] = rf[i.a2.reg] < rf[i.a3.reg] ? 1 : 0; break;",
+              ),
+              (
+                  "\t\t\tcase SLL: rf[i.a1.reg] = rf[i.a2.reg] << rf[i.a3.reg]; break;",
+                  "\t\t\tcase SLL: rf[i.a1.reg] = rf[i.a2.reg] << (rf[i.a3.reg] & 0x1f); break;",
+              ),
+              (
+                  "\t\t\tcase SRL: rf[i.a1.reg] = rf[i.a2.reg] >> rf[i.a3.reg]; break;",
+                  "\t\t\tcase SRL: rf[i.a1.reg] = rf[i.a2.reg] >> (rf[i.a3.reg] & 0x1f); break;",
+              ),
+              (
+                  "\t\t\tcase SRA: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) >> rf[i.a3.reg]; break;",
+                  "\t\t\tcase SRA: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) >> (rf[i.a3.reg] & 0x1f); break;",
+              ),
+              (
+                  """\t\t\tcase JALR:\n\t\t\t\trf[i.a1.reg] = pc + 4;\n\t\t\t\tpc_next = rf[i.a2.reg] + i.a3.imm;\n\t\t\t\t//printf( \"jalr %d %d(%d)\\n\", i.a1.reg, i.a3.imm, i.a2.reg );\n\t\t\t\tbreak;""",
+                  """\t\t\tcase JALR: {\n\t\t\t\tuint32_t jalrTarget = (rf[i.a2.reg] + i.a3.imm) & ~1u;\n\t\t\t\trf[i.a1.reg] = pc + 4;\n\t\t\t\tpc_next = jalrTarget;\n\t\t\t\t//printf( \"jalr %d %d(%d)\\n\", i.a1.reg, i.a3.imm, i.a2.reg );\n\t\t\t\tbreak;\n\t\t\t}""",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected one match, found {count}: {old.splitlines()[0]}")
+              source = source.replace(old, new, 1)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Build emulator
+        shell: bash
+        run: |
+          rm -rf obj
+          make
+          g++ -o obj/emulator-ubsan cachesim.cpp emulator.cpp -g -std=c++11 \
+              -fsanitize=undefined -fno-sanitize-recover=undefined
+
+      - name: Test SLTU and register shifts
+        shell: bash
+        run: |
+          cat > /tmp/rv32-shift-sltu.s <<'EOF'
+          addi x1 x0 1
+          addi x2 x0 32
+          sll x3 x1 x2
+          srl x4 x1 x2
+          lui x5 0x80000
+          sra x6 x5 x2
+          sltu x7 x1 x2
+          hcf
+          EOF
+
+          UBSAN_OPTIONS=halt_on_error=1 timeout 5 \
+              ./obj/emulator-ubsan /tmp/rv32-shift-sltu.s run \
+              > /tmp/rv32-shift-sltu.log
+
+          grep -F "x03:0x00000001" /tmp/rv32-shift-sltu.log
+          grep -F "x04:0x00000001" /tmp/rv32-shift-sltu.log
+          grep -F "x06:0x80000000" /tmp/rv32-shift-sltu.log
+          grep -F "x07:0x00000001" /tmp/rv32-shift-sltu.log
+
+      - name: Test JALR source and destination overlap
+        shell: bash
+        run: |
+          cat > /tmp/rv32-jalr-overlap.s <<'EOF'
+          addi x1 x0 17
+          jalr x1 0(x1)
+          addi x3 x0 99
+          addi x3 x0 99
+          addi x2 x0 7
+          hcf
+          EOF
+
+          UBSAN_OPTIONS=halt_on_error=1 timeout 5 \
+              ./obj/emulator-ubsan /tmp/rv32-jalr-overlap.s run \
+              > /tmp/rv32-jalr-overlap.log
+
+          grep -F "x01:0x00000008" /tmp/rv32-jalr-overlap.log
+          grep -F "x03:0x00000000" /tmp/rv32-jalr-overlap.log
+
+      - name: Test JALR target alignment
+        shell: bash
+        run: |
+          cat > /tmp/rv32-jalr-align.s <<'EOF'
+          addi x4 x0 17
+          jalr x5 0(x4)
+          addi x3 x0 99
+          addi x3 x0 99
+          addi x2 x0 7
+          hcf
+          EOF
+
+          UBSAN_OPTIONS=halt_on_error=1 timeout 5 \
+              ./obj/emulator-ubsan /tmp/rv32-jalr-align.s run \
+              > /tmp/rv32-jalr-align.log
+
+          grep -F "x03:0x00000000" /tmp/rv32-jalr-align.log
+          grep -F "inst:      4 pc:     20 src line: 6" /tmp/rv32-jalr-align.log
+
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/apply-rv32i-execution-fixes.yml
+          git add emulator.cpp .github/workflows/apply-rv32i-execution-fixes.yml
+          git diff --cached --check
+          git commit -m "Fix RV32I execution semantics"
+          git push origin HEAD:main
