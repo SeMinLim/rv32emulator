@@ -828,13 +828,13 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 			case ADD: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;
 			case SUB: rf[i.a1.reg] = rf[i.a2.reg] - rf[i.a3.reg]; break;
 			case SLT: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) < (*(int32_t*)&rf[i.a3.reg]) ? 1 : 0; break;
-			case SLTU: rf[i.a1.reg] = rf[i.a2.reg] + rf[i.a3.reg]; break;
+			case SLTU: rf[i.a1.reg] = rf[i.a2.reg] < rf[i.a3.reg] ? 1 : 0; break;
 			case AND: rf[i.a1.reg] = rf[i.a2.reg] & rf[i.a3.reg]; break;
 			case OR: rf[i.a1.reg] = rf[i.a2.reg] | rf[i.a3.reg]; break;
 			case XOR: rf[i.a1.reg] = rf[i.a2.reg] ^ rf[i.a3.reg]; break;
-			case SLL: rf[i.a1.reg] = rf[i.a2.reg] << rf[i.a3.reg]; break;
-			case SRL: rf[i.a1.reg] = rf[i.a2.reg] >> rf[i.a3.reg]; break;
-			case SRA: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) >> rf[i.a3.reg]; break;
+			case SLL: rf[i.a1.reg] = rf[i.a2.reg] << (rf[i.a3.reg] & 0x1f); break;
+			case SRL: rf[i.a1.reg] = rf[i.a2.reg] >> (rf[i.a3.reg] & 0x1f); break;
+			case SRA: rf[i.a1.reg] = (*(int32_t*)&rf[i.a2.reg]) >> (rf[i.a3.reg] & 0x1f); break;
 
 
 			case ADDI: rf[i.a1.reg] = rf[i.a2.reg] + i.a3.imm; break;
@@ -879,11 +879,13 @@ void execute(uint8_t* mem, instr* imem, label_loc* labels, int label_count, bool
 				pc_next = i.a2.imm;
 				//printf( "jal %d %x\n", pc+4, pc_next );
 				break;
-			case JALR:
+			case JALR: {
+				uint32_t jalrTarget = (rf[i.a2.reg] + i.a3.imm) & ~1u;
 				rf[i.a1.reg] = pc + 4;
-				pc_next = rf[i.a2.reg] + i.a3.imm;
+				pc_next = jalrTarget;
 				//printf( "jalr %d %d(%d)\n", i.a1.reg, i.a3.imm, i.a2.reg );
 				break;
+			}
 			case AUIPC:
 				rf[i.a1.reg] = pc + (i.a2.imm<<12);
 				//printf( "auipc %x \n", rf[i.a1.reg] );
