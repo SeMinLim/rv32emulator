@@ -234,12 +234,12 @@ void mem_write(uint8_t* mem, uint32_t addr, uint32_t data, instr_type op) {
 		mem_write_reqs ++;
 		int way = cache_peek(addr,bytes);
 		if ( way < 0 ) {
-			cache_flush(addr, mem);
+			int flushed = cache_flush(addr, mem);
 			uint32_t waddr = addr-(addr&((1<<(2+CACHE_LINE_WORD_SZ))-1));
 			for ( int i = 0; i < CACHE_LINE_WORD; i++ ) {
 				cache_update(waddr+(i*4), *(uint32_t*)&(mem[waddr+(i*4)]));
 			}
-			mem_flush_words += CACHE_LINE_WORD;
+			mem_flush_words += flushed;
 		} else {
 			cache_write_hits ++;
 		}
@@ -265,8 +265,8 @@ uint32_t mem_read(uint8_t* mem, uint32_t addr, instr_type op) {
 		mem_read_reqs ++;
 		int way = cache_peek(addr,bytes);
 		if ( way < 0 ) {
-			cache_flush(addr, mem);
-			mem_flush_words += CACHE_LINE_WORD;
+			int flushed = cache_flush(addr, mem);
+			mem_flush_words += flushed;
 			uint32_t waddr = addr-(addr&((1<<(2+CACHE_LINE_WORD_SZ))-1));
 			for ( int i = 0; i < CACHE_LINE_WORD; i++ ) {
 				cache_update(waddr+(i*4), *(uint32_t*)&(mem[waddr+(i*4)]));
